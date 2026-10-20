@@ -1,2 +1,4 @@
-# Auto detect text files and perform LF normalization
+# Normalise line endings in the repo; checkouts use the platform's usual endings
 * text=auto
+*.png binary
+*.zip binary

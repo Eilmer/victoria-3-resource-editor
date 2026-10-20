@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HMPS Resource Editor</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Apply the saved theme before the page paints
+    try { if (localStorage.getItem("hmps-resource-editor:theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>HMPS Resource Editor</h1>
+    <button id="btnTheme" class="theme-toggle" title="Switch between dark and light">Light mode</button>
+    <div class="topbar-actions" id="mainActions" hidden>
+      <button id="btnImport" title="Read a history file (from this tool or hand-written) and continue editing it">Import history file</button>
+      <button id="btnSettings">Output settings</button>
+      <button id="btnExport" class="primary">Export (<span id="changeCount">0</span>)</button>
+    </div>
+  </header>
+
+  <section id="setup" class="setup">
+    <div class="card">
+      <h2>Load map data</h2>
+      <p>
+        Pick a folder that contains <code>map_data</code>, or the <code>map_data</code> folder itself.
+        The tool reads <code>state_regions/*.txt</code> and <code>provinces.png</code>, and
+        <code>common/buildings</code> if it's in the folder (pick the <code>game</code> folder or your mod's root to include it).
+        Nothing is uploaded anywhere; everything stays in your browser.
+      </p>
+
+      <div class="pick-row">
+        <label class="file-btn">
+          1. Base map data
+          <input type="file" id="baseInput" webkitdirectory multiple>
+        </label>
+        <span class="pick-status" id="baseStatus">Usually <code>Victoria 3/game</code> or <code>game/map_data</code></span>
+      </div>
+
+      <div class="pick-row">
+        <label class="file-btn secondary">
+          2. Mod folder (optional)
+          <input type="file" id="modInput" webkitdirectory multiple>
+        </label>
+        <span class="pick-status" id="modStatus">Your mod's root or <code>map_data</code>. Files with the same name replace the base ones.</span>
+      </div>
+
+      <button id="btnLoad" class="primary" disabled>Load map</button>
+      <p id="loadStatus" class="load-status" role="status"></p>
+    </div>
+  </section>
+
+  <main id="main" class="main" hidden>
+    <div class="map-area">
+      <div class="map-toolbar">
+        <label>Colour by
+          <select id="colourMode"></select>
+        </label>
+        <span class="zoom-buttons">
+          <button id="zoomOut" title="Zoom out">−</button>
+          <button id="zoomIn" title="Zoom in">+</button>
+          <button id="zoomFit" title="Fit map to window">Fit</button>
+        </span>
+        <button id="btnImage" title="Save this map as an image">Save image</button>
+        <span id="legend" class="legend"></span>
+      </div>
+      <div id="mapContainer" class="map-container"><canvas id="mapCanvas"></canvas></div>
+      <div id="tooltip" class="tooltip" hidden></div>
+    </div>
+
+    <aside class="sidebar">
+      <div class="search">
+        <input id="search" type="search" placeholder="Search states…" autocomplete="off">
+        <ul id="searchResults" class="search-results"></ul>
+      </div>
+
+      <section id="statePanel" class="state-panel">
+        <p class="hint">Click a state on the map, or search for one.</p>
+      </section>
+
+      <details class="panel" open>
+        <summary>Pending changes <span id="changesSummary"></span></summary>
+        <div id="changesList"></div>
+      </details>
+
+      <details class="panel" id="warningsPanel" hidden>
+        <summary>Load warnings (<span id="warningCount">0</span>)</summary>
+        <ul id="warningsList" class="warnings"></ul>
+      </details>
+    </aside>
+  </main>
+
+  <dialog id="settingsDialog" class="dialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Output settings</h2>
+
+      <fieldset class="target-picker">
+        <legend>Where changes are written</legend>
+        <p class="hint">This decides which files Export produces. Undiscovered amounts can only be
+          changed in the map data files.</p>
+        <label class="target-option">
+          <input type="radio" name="target" value="all">
+          <span>
+            <strong>Everything into the map data files</strong>
+            <small>Capped resources, arable farms and plantations, and discoverable resources are all written
+              into copies of <code>map_data/state_regions</code>. No history file.</small>
+          </span>
+        </label>
+        <label class="target-option">
+          <input type="radio" name="target" value="discoverable">
+          <span>
+            <strong>Discoverable resources into the map data files, the rest into a history file</strong>
+            <small>Discovered and undiscovered amounts go in the map data files. Capped and arable changes
+              go in the history file.</small>
+          </span>
+        </label>
+        <label class="target-option">
+          <input type="radio" name="target" value="undiscovered">
+          <span>
+            <strong>Only undiscovered amounts into the map data files</strong>
+            <small>Everything else, including discovered amounts, goes in the history file.</small>
+          </span>
+        </label>
+      </fieldset>
+
+      <h3>History file</h3>
+      <p class="hint">
+        These templates control the history file. Use the placeholders shown under each field.
+        Leave a template empty to skip that kind of change.
+      </p>
+
+      <div class="grid2">
+        <label>History folder (inside your mod) <input name="historyFolder"></label>
+        <label>History file name <input name="historyFileName"></label>
+      </div>
+      <label>File template <textarea name="historyTemplate" rows="3"></textarea>
+        <small>{body} = all the state blocks</small></label>
+      <label>State block template <textarea name="stateTemplate" rows="3"></textarea>
+        <small>{state} {lines}</small></label>
+      <label>Capped resource change <textarea name="cappedTemplate" rows="4"></textarea>
+        <small>{state} {resource} {building} {amount}</small></label>
+      <label>Discovered amount change (only used when discovered amounts go in the history file) <textarea name="discoveredTemplate" rows="4"></textarea>
+        <small>{state} {resource} {building} {amount}</small></label>
+      <div class="grid2">
+        <label>Arable: add <textarea name="arableAddTemplate" rows="2"></textarea>
+          <small>{state} {resource} {building}</small></label>
+        <label>Arable: remove <textarea name="arableRemoveTemplate" rows="2"></textarea>
+          <small>{state} {resource} {building}</small></label>
+      </div>
+
+      <h3>Building for each resource</h3>
+      <p class="hint">
+        State regions use building groups (<code>bg_…</code>); the effects need building names.
+        Load <code>common/buildings</code> (pick the game or mod root folder) to read them from the game files.
+        Type here to override.
+      </p>
+      <table class="types-table"><tbody id="buildingsBody"></tbody></table>
+
+      <div class="dialog-actions">
+        <button type="button" id="btnResetSettings">Reset to defaults</button>
+        <span class="spacer"></span>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="exportDialog" class="dialog wide">
+    <h2>Export</h2>
+    <div id="exportFiles"></div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button id="btnCloseExport">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="imageDialog" class="dialog">
+    <form method="dialog" id="imageForm">
+      <h2>Save map image</h2>
+      <label>Title <input name="title"></label>
+      <label>Subtitle <input name="subtitle"></label>
+      <div class="grid2">
+        <label>Width
+          <select name="width">
+            <option value="auto" selected>Auto: big enough for every number</option>
+            <option value="2048">2048 px</option>
+            <option value="4096">4096 px</option>
+            <option value="full">Full map size</option>
+          </select>
+        </label>
+        <label>Background
+          <select name="theme">
+            <option value="current">Match the app</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+      </div>
+      <label>Title position
+        <select name="placement">
+          <option value="ocean" selected>In the ocean (finds open sea away from the coast)</option>
+          <option value="top">Above the map</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" name="numbers" checked> Show numbers on states (totals show discovered (undiscovered))</label>
+      <label class="check"><input type="checkbox" name="outlineChanges"> Outline states with pending changes</label>
+      <p class="hint">Maps show amounts with your pending changes applied.</p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="btnImageSave" class="primary">Save this map (PNG)</button>
+      </div>
+
+      <h3>Save several maps</h3>
+      <p class="hint">Tick the maps you want. Each gets its own title, and they're saved together in a zip.
+        Width, background, title position and outlines above apply to all of them.</p>
+      <div class="pick-actions">
+        <button type="button" id="btnPickAll">All</button>
+        <button type="button" id="btnPickNone">None</button>
+        <span id="pickCount" class="hint"></span>
+      </div>
+      <div id="mapPicker" class="map-picker"></div>
+
+      <p id="imageStatus" class="load-status" role="status"></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button value="cancel" formnovalidate>Close</button>
+        <button type="button" id="btnImageAll" class="primary">Save selected maps (.zip)</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="importInput" accept=".txt" hidden>
+
+  <script src="js/parser.js"></script>
+  <script src="js/mapdata.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="js/mappatch.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

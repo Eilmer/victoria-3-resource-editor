@@ -1,0 +1,4 @@
+test/testdata/
+test/*.png
+test/*.zip
+test/exported_history.txt

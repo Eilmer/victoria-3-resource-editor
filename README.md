@@ -10,6 +10,9 @@ arable farms/plantations, and discoverable resources (oil, rubber, gold fields).
   for undiscovered amounts), or for everything if you choose. Only the changed values are
   touched; comments and formatting stay.
 
+**Use it online:** https://eilmer.github.io/victoria-3-resource-editor/ (nothing is uploaded; everything
+runs in your browser). Or download the repo and open `index.html`.
+
 ## Using it
 
 1. Open `index.html` in Chrome or Edge (just double-click it; no server needed).
